@@ -9,11 +9,12 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 
 public class Main {
     private static final String API_URL = "http://localhost:8080";
-    private static final int batchSize = 50000;
 
     public static void main(String[] args) {
         int exitCode = new CommandLine(new Mine()).execute(args);
@@ -65,17 +66,31 @@ public class Main {
 
         @Override
         public void run() {
-            int startId = 0;
-            for (int currentStart = startId; currentStart <= nodesMaxId; currentStart += batchSize) {
-                int currentEnd = currentStart + batchSize - 1;
+            Instant endDate = Instant.parse("2024-09-01T00:00:00Z");
+            Instant startDate = endDate.minus(1, ChronoUnit.YEARS);
+
+            while (endDate.isAfter(Instant.parse("2002-05-01T00:00:00Z"))) {
+                long startTimestamp = startDate.toEpochMilli();
+                long endTimestamp = endDate.toEpochMilli();
+
                 String cypherQuery = String.format(
-                        "MATCH (n:Release) " +
-                                "WHERE id(n) >= %d AND id(n) <= %d " +
-                                "RETURN n;",
-                        currentStart, currentEnd
+                    "MATCH (n:Release) " +
+                    "WHERE n.timestamp >= %d AND n.timestamp < %d " +
+                    "WITH n, rand() AS r " +
+                    "ORDER BY r " +
+                    "WITH collect(n) AS release_lst " +
+                    "WITH release_lst, toInteger(size(release_lst) * 0.1) AS limitCount " +
+                    "UNWIND release_lst[0..limitCount] AS rel " +
+                    "RETURN rel;",
+                    startTimestamp, endTimestamp
                 );
-                System.out.println(currentEnd + "/" + nodesMaxId);
+
+                System.out.println("Processing from " + startDate + " to " + endDate);
                 cypherQuery(cypherQuery, List.of("SBOM"));
+
+                // Move the date range back by one year
+                endDate = startDate;
+                startDate = endDate.minus(1, ChronoUnit.YEARS);
             }
         }
     }
